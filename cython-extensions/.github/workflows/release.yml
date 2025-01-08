@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    concurrency: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        python-version: [ '3.12' ]
+
+    steps:
+      # check-out repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GH_TOKEN_CYTHON }}
+          fetch-depth: 0
+      # install poetry
+      - name: Install poetry
+        run: pipx install poetry
+      # set-up python with cache
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'poetry'
+      # install requirements
+      - name: Install requirements
+        run: poetry install --only semver --no-root
+      # semantic release
+      - name: Python Semantic Release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN_CYTHON }}
+        run: |
+          set -o pipefail
+          # Set git details
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          # run semantic-release
+          poetry run semantic-release publish -v DEBUG -D commit_author="github-actions <action@github.com>"
+
+  upload_to_pipi:
+    name: Upload to Pipi
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.12']
+
+    steps:
+      # check-out repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GH_TOKEN_CYTHON }}
+          fetch-depth: 0
+      - name: Download all the dists
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PIPI_TOKEN }}
+
+
