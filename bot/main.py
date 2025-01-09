@@ -67,7 +67,7 @@ class MyBot(AresBot):
         attack_target = None
 
         self.zergling_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_ONE)
-        roach_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_TWO)
+        self.roach_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_TWO)
         queen_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_THREE)
         drone_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_FOUR)
         baneling_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_FIVE)
@@ -82,19 +82,19 @@ class MyBot(AresBot):
             target = self.game_info.map_center
 
 
+        if self.roach_squad:
+            self.roach_army_attack(self.roach_squad, target, ground_grid)
+
+
         if self.zergling_squad:
             self.zergling_army_attack(self.zergling_squad, target, ground_grid)    
 
-        #for unit in self.units(UnitTypeId.ZERGLING):
-            #unit(AMove(unit=unit, target=target))
-            #unit.attack(target)
-        #    self.register_behavior(AMove(unit, target))
 
 
-        for unit in self.units(UnitTypeId.ROACH):
+        #for unit in self.units(UnitTypeId.ROACH):
             #unit(AMove(unit=unit, target=target))
             #unit.attack(target)
-            self.register_behavior(AMove(unit, target))
+            #self.register_behavior(AMove(unit, target))
 
         for unit in self.units(UnitTypeId.QUEEN):
             #unit(AMove(unit=unit, target=target))
@@ -149,44 +149,38 @@ class MyBot(AresBot):
             print("zergling")
 
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
-        if unit.type_id in self.ZERG_UNIT_TYPE:
-            self.mediator.assign_role(
-                tag=unit.tag, role=UnitRole.ATTACKING_MAIN_SQUAD
-            )
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
+
         if unit.type_id == UnitTypeId.ZERGLING:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_ONE
             )
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
         if unit.type_id == UnitTypeId.ROACH:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_TWO
             )
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
+
         if unit.type_id == UnitTypeId.QUEEN:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_THREE
             )
 
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
+
         if unit.type_id == UnitTypeId.DRONE:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_FOUR
             )
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
+
         if unit.type_id == UnitTypeId.BANELING:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_FIVE
             )
 
-        # assign all units to ATTACKING_MAIN_SQUAD role by default
+
         if unit.type_id == UnitTypeId.RAVAGER:
             self.mediator.assign_role(
                 tag=unit.tag, role=UnitRole.CONTROL_GROUP_SIX
@@ -232,6 +226,16 @@ class MyBot(AresBot):
                 main_maneuver = CombatManeuver()
                 main_maneuver.add(AMove(unit, attack_target))
                 self.register_behavior(main_maneuver)
+
+
+    def roach_army_attack(self, main_attack_force: Units, attack_target: Point2, ground_grid: np.ndarray) -> None:
+        for unit in main_attack_force:
+            if unit.is_idle:
+                main_maneuver = CombatManeuver()
+                main_maneuver.add(AMove(unit, attack_target))
+                self.register_behavior(main_maneuver)
+
+
     """
     Can use `python-sc2` hooks as usual, but make a call the inherited method in the superclass
     Examples:
