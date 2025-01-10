@@ -1,12 +1,13 @@
 from typing import Optional
-from ares.consts import UnitRole
+from ares.consts import UnitRole, UnitTreeQueryType, ALL_STRUCTURES, WORKER_TYPES
 from ares import AresBot
 from ares.behaviors.combat import CombatManeuver
-from cython_extensions import cy_closest_to, cy_distance_to
+from cython_extensions import cy_closest_to, cy_in_attack_range, cy_pick_enemy_target
 from ares.behaviors.combat.individual import (
     AMove,
     PathUnitToTarget,
     StutterUnitBack,
+    ShootTargetInRange,
     AttackTarget,
     KeepUnitSafe,
 )
@@ -15,11 +16,21 @@ from sc2.ids.unit_typeid import UnitTypeId
 from sc2.unit import Unit
 from sc2.units import Units
 from sc2.position import Point2
+from sc2.data import Race
 
 import time # for debug tool
 
 import numpy as np
 
+
+COMMON_UNIT_IGNORE_TYPES: set[UnitTypeId] = {
+    UnitTypeId.EGG,
+    UnitTypeId.LARVA,
+    UnitTypeId.CREEPTUMORBURROWED,
+    UnitTypeId.CREEPTUMORQUEEN,
+    UnitTypeId.CREEPTUMOR,
+    UnitTypeId.MULE,
+}
 
 class MyBot(AresBot):
 
@@ -49,7 +60,9 @@ class MyBot(AresBot):
         await super().on_start()
         print("Game started")
         self.chat_send("teste 123")
+        #self.enemy_initial_position = self.enemy_units[0].tag.position
 
+        #TO DO: Implement a function to get the initial position based on the enemy start point
 
 
 #_______________________________________________________________________________________________________________________
@@ -210,6 +223,7 @@ class MyBot(AresBot):
             print("Enemy Units: ", self.enemy_units)
             print("Unit Roles: ", self.mediator.get_unit_role_dict)
             print("zergling_squad: ", self.zergling_squad)
+            #print("Enemy initial position: ", self.enemy_initial_position)
             #print("FirstBase: ", self.first_base)
             #print("SecondBase: ", self.second_base)
             self.last_debug_time = current_time  # Atualizar a última vez que a ferramenta de debug foi chamada
@@ -229,11 +243,82 @@ class MyBot(AresBot):
 
 
     def roach_army_attack(self, main_attack_force: Units, attack_target: Point2, ground_grid: np.ndarray) -> None:
+        
+        query_type: UnitTreeQueryType = (
+            UnitTreeQueryType.EnemyGround
+            if self.race == Race.Zerg
+            else UnitTreeQueryType.AllEnemy
+        )
+        near_enemy: dict[int, Units] = self.mediator.get_units_in_range(
+            start_points=main_attack_force,
+            distances=15,
+            query_tree=query_type,
+            return_as_dict=True,
+        )
+
+        # get a ground grid to path on, this already contains enemy influence
+        grid: np.ndarray = self.mediator.get_ground_grid
+
+        # make a single call to self.attack_target property
+        # otherwise it keep calculating for every unit
+        target: Point2 = attack_target
+
+        # use `ares-sc2` combat maneuver system
+        # https://aressc2.github.io/ares-sc2/api_reference/behaviors/combat_behaviors.html
         for unit in main_attack_force:
-            if unit.is_idle:
-                main_maneuver = CombatManeuver()
-                main_maneuver.add(AMove(unit, attack_target))
-                self.register_behavior(main_maneuver)
+            """
+            Set up a new CombatManeuver, idea here is to orchestrate your micro
+            by stacking behaviors in order of priority. If a behavior executes
+            then all other behaviors will be ignored for this step.
+            """
+
+            attacking_maneuver: CombatManeuver = CombatManeuver()
+            # we already calculated close enemies, use unit tag to retrieve them
+            all_close: Units = near_enemy[unit.tag].filter(
+                lambda u: not u.is_memory and u.type_id not in COMMON_UNIT_IGNORE_TYPES
+            )
+            only_enemy_units: Units = all_close.filter(
+                lambda u: u.type_id not in ALL_STRUCTURES
+            )
+
+            # enemy around, engagement control
+            if all_close:
+                # ares's cython version of `cy_in_attack_range` is approximately 4
+                # times speedup vs burnysc2's `all_close.in_attack_range_of`
+
+                # idea here is to attack anything in range if weapon is ready
+                # check for enemy units first
+                if in_attack_range := cy_in_attack_range(unit, only_enemy_units):
+                    # `ShootTargetInRange` will check weapon is ready
+                    # otherwise it will not execute
+                    attacking_maneuver.add(
+                        ShootTargetInRange(unit=unit, targets=in_attack_range)
+                    )
+                # then enemy structures
+                elif in_attack_range := cy_in_attack_range(unit, all_close):
+                    attacking_maneuver.add(
+                        ShootTargetInRange(unit=unit, targets=in_attack_range)
+                    )
+
+                enemy_target: Unit = cy_pick_enemy_target(all_close)
+
+
+                # low shield, keep protoss units safe
+                if self.race == Race.Protoss and unit.shield_percentage < 0.3:
+                    attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
+
+                else:
+                    attacking_maneuver.add(
+                        StutterUnitBack(unit=unit, target=enemy_target, grid=grid)
+                    )
+
+            # no enemy around, path to the attack target
+            else:
+                attacking_maneuver.add(AMove(unit=unit, target=target))
+
+            # DON'T FORGET TO REGISTER OUR COMBAT MANEUVER!!
+            self.register_behavior(attacking_maneuver)
+
 
 
     """
