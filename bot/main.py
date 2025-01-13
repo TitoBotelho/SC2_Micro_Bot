@@ -10,6 +10,7 @@ from ares.behaviors.combat.individual import (
     ShootTargetInRange,
     AttackTarget,
     KeepUnitSafe,
+    StutterUnitForward,
 )
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
@@ -34,7 +35,7 @@ COMMON_UNIT_IGNORE_TYPES: set[UnitTypeId] = {
 
 class MyBot(AresBot):
 
-    combat_manager = None
+
     ZERG_UNIT_TYPE: set[UnitTypeId] = { UnitTypeId.ZERGLING, UnitTypeId.ROACH }
 
     last_debug_time = 0 # Debug tool
@@ -104,7 +105,7 @@ class MyBot(AresBot):
 
 
         if self.roach_squad:
-            self.roach_army_attack(self.roach_squad, self.attack_target, ground_grid)
+            self.roach_army_attack(self.roach_squad)
 
 
         if self.zergling_squad:
@@ -250,7 +251,7 @@ class MyBot(AresBot):
                 self.register_behavior(main_maneuver)
 
 
-    def roach_army_attack(self, main_attack_force: Units, attack_target: Point2, ground_grid: np.ndarray) -> None:
+    def roach_army_attack(self, main_attack_force: Units) -> None:
         
         query_type: UnitTreeQueryType = (
             UnitTreeQueryType.EnemyGround
@@ -266,18 +267,58 @@ class MyBot(AresBot):
 
         # get a ground grid to path on, this already contains enemy influence
         grid: np.ndarray = self.mediator.get_ground_grid
+        
 
         # make a single call to self.attack_target property
         # otherwise it keep calculating for every unit
-        target: Point2 = attack_target
+        target: Point2 = self.attack_target
 
         # use `ares-sc2` combat maneuver system
         # https://aressc2.github.io/ares-sc2/api_reference/behaviors/combat_behaviors.html
         for unit in main_attack_force:
-            if unit.is_idle:  # Verifica se a unidade está ociosa antes de dar o comando
-                main_maneuver = CombatManeuver()
-                main_maneuver.add(AMove(unit, attack_target))
-                self.register_behavior(main_maneuver)
+            """
+            Set up a new CombatManeuver, idea here is to orchestrate your micro
+            by stacking behaviors in order of priority. If a behavior executes
+            then all other behaviors will be ignored for this step.
+            """
+
+            attacking_maneuver: CombatManeuver = CombatManeuver()
+            # we already calculated close enemies, use unit tag to retrieve them
+            all_close: Units = near_enemy[unit.tag].filter(
+                lambda u: not u.is_memory and u.type_id not in COMMON_UNIT_IGNORE_TYPES
+            )
+            only_enemy_units: Units = all_close.filter(
+                lambda u: u.type_id not in ALL_STRUCTURES
+            )
+
+            # enemy around, engagement control
+            if all_close:
+                # ares's cython version of `cy_in_attack_range` is approximately 4
+                # times speedup vs burnysc2's `all_close.in_attack_range_of`
+
+                # idea here is to attack anything in range if weapon is ready
+                # check for enemy units first
+                if in_attack_range := cy_in_attack_range(unit, only_enemy_units):
+                    # `ShootTargetInRange` will check weapon is ready
+                    # otherwise it will not execute
+                    attacking_maneuver.add(
+                        ShootTargetInRange(unit=unit, targets=in_attack_range)
+                    )
+                enemy_target: Unit = cy_pick_enemy_target(all_close)
+
+                attacking_maneuver.add(
+                    StutterUnitBack(unit=unit, target=enemy_target, grid=grid)
+                )
+
+
+                #attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
+
+            # no enemy around, path to the attack target
+            else:
+                attacking_maneuver.add(AMove(unit=unit, target=target))
+
+            # DON'T FORGET TO REGISTER OUR COMBAT MANEUVER!!
+            self.register_behavior(attacking_maneuver)
 
 
 
