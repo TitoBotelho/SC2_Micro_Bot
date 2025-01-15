@@ -292,14 +292,24 @@ class MyBot(AresBot):
 
             # enemy around, engagement control
             if all_close:
-                attacking_maneuver.add(AMove(unit=unit, target=target))
+                if self.roach_squad:
+                    if self.roach_squad.center.distance_to(unit) <= 5:
+                        attacking_maneuver.add(AMove(unit=unit, target=target))
+                    
+                    else:
+                        attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
+            
+                else:
+                    attacking_maneuver.add(AMove(unit=unit, target=target))
 
 
                 #attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
 
             # no enemy around, path to the attack target
             else:
-                attacking_maneuver.add(AMove(unit=unit, target=target))
+                attacking_maneuver.add(PathUnitToTarget(unit, grid, target))
+
+
 
             # DON'T FORGET TO REGISTER OUR COMBAT MANEUVER!!
             self.register_behavior(attacking_maneuver)
