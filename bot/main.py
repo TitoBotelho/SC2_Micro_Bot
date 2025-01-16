@@ -53,6 +53,13 @@ class MyBot(AresBot):
         """
         super().__init__(game_step_override)
 
+        self.is_roach_attacking = False
+
+
+
+
+
+
     @property
     def attack_target(self) -> Point2:
         attack_target: Point2 = self.game_info.map_center
@@ -70,6 +77,7 @@ class MyBot(AresBot):
         print("Game started")
         self.chat_send("teste 123")
         #self.enemy_initial_position = self.enemy_units[0].tag.position
+        
 
         #TO DO: Implement a function to get the initial position based on the enemy start point
 
@@ -165,6 +173,8 @@ class MyBot(AresBot):
     async def on_unit_created(self, unit: Unit) -> None:
         await super(MyBot, self).on_unit_created(unit)
 
+        self.is_roach_attacking = False
+
         if unit.type_id == UnitTypeId.ROACH:
             print("roach")
 
@@ -236,9 +246,10 @@ class MyBot(AresBot):
             #print("Creep Queen Policy: ", self.creep_queen_policy)
             #print("RallyPointSet: ", self.rally_point_set)
             #print("Enemy Structures: ", self.enemy_structures)
-            print("Enemy Units: ", self.enemy_units)
-            print("Unit Roles: ", self.mediator.get_unit_role_dict)
-            print("zergling_squad: ", self.zergling_squad)
+            #print("Enemy Units: ", self.enemy_units)
+            #print("Unit Roles: ", self.mediator.get_unit_role_dict)
+            #print("zergling_squad: ", self.zergling_squad)
+            print("is roach attacking: ", self.is_roach_attacking)
             #print("Enemy initial position: ", self.enemy_initial_position)
             #print("FirstBase: ", self.first_base)
             #print("SecondBase: ", self.second_base)
@@ -247,6 +258,13 @@ class MyBot(AresBot):
 
 #_______________________________________________________________________________________________________________________
 #          COMBAT MANEUVER
+#_______________________________________________________________________________________________________________________
+
+
+
+
+#_______________________________________________________________________________________________________________________
+#          ZERGLING
 #_______________________________________________________________________________________________________________________
 
 
@@ -293,7 +311,7 @@ class MyBot(AresBot):
             # enemy around, engagement control
             if all_close:
                 if self.roach_squad:
-                    if self.roach_squad.center.distance_to(unit) <= 5:
+                    if self.is_roach_attacking:
                         attacking_maneuver.add(AMove(unit=unit, target=target))
                     
                     else:
@@ -313,6 +331,11 @@ class MyBot(AresBot):
 
             # DON'T FORGET TO REGISTER OUR COMBAT MANEUVER!!
             self.register_behavior(attacking_maneuver)
+
+
+#_______________________________________________________________________________________________________________________
+#          ROACH
+#_______________________________________________________________________________________________________________________
 
 
     def roach_army_attack(self, main_attack_force: Units) -> None:
@@ -357,6 +380,8 @@ class MyBot(AresBot):
 
             # enemy around, engagement control
             if all_close:
+
+                
                 # ares's cython version of `cy_in_attack_range` is approximately 4
                 # times speedup vs burnysc2's `all_close.in_attack_range_of`
 
@@ -373,6 +398,7 @@ class MyBot(AresBot):
                 attacking_maneuver.add(
                     StutterUnitBack(unit=unit, target=enemy_target, grid=grid)
                 )
+                
 
 
                 #attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
@@ -385,6 +411,20 @@ class MyBot(AresBot):
             self.register_behavior(attacking_maneuver)
 
 
+
+
+
+    
+    async def on_unit_took_damage(self, unit: Unit, amount_damage_taken: float) -> None:
+        await super(MyBot, self).on_unit_took_damage(unit, amount_damage_taken)
+    
+
+        if unit.type_id == UnitTypeId.ROACH:
+            self.is_roach_attacking = True
+             
+
+
+         # custom on_unit_took_damage logic here ...
 
     """
     Can use `python-sc2` hooks as usual, but make a call the inherited method in the superclass
@@ -414,8 +454,3 @@ class MyBot(AresBot):
     #     await super(MyBot, self).on_unit_destroyed(unit_tag)
     #
     #     # custom on_unit_destroyed logic here ...
-    #
-    # async def on_unit_took_damage(self, unit: Unit, amount_damage_taken: float) -> None:
-    #     await super(MyBot, self).on_unit_took_damage(unit, amount_damage_taken)
-    #
-    #     # custom on_unit_took_damage logic here ...
