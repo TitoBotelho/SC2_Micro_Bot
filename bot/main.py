@@ -11,6 +11,7 @@ from ares.behaviors.combat.individual import (
     AttackTarget,
     KeepUnitSafe,
     StutterUnitForward,
+    UseAbility,
 )
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
@@ -101,7 +102,7 @@ class MyBot(AresBot):
         queen_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_THREE)
         drone_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_FOUR)
         baneling_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_FIVE)
-
+        self.ravager_squad = Units = self.mediator.get_units_from_role(role=UnitRole.CONTROL_GROUP_SIX)
 
 
         await self.debug_tool()
@@ -120,7 +121,8 @@ class MyBot(AresBot):
         if self.zergling_squad:
             self.zergling_army_attack(self.zergling_squad)    
 
-
+        if self.ravager_squad:
+            self.ravager_army_attack(self.ravager_squad)
 
         #for unit in self.units(UnitTypeId.ROACH):
             #unit(AMove(unit=unit, target=target))
@@ -412,6 +414,94 @@ class MyBot(AresBot):
 
 
 
+#_______________________________________________________________________________________________________________________
+#          RAVAGER
+#_______________________________________________________________________________________________________________________
+
+
+    def ravager_army_attack(self, main_attack_force: Units) -> None:
+        
+        query_type: UnitTreeQueryType = (
+            UnitTreeQueryType.EnemyGround
+            if self.race == Race.Zerg
+            else UnitTreeQueryType.AllEnemy
+        )
+        near_enemy: dict[int, Units] = self.mediator.get_units_in_range(
+            start_points=main_attack_force,
+            distances=15,
+            query_tree=query_type,
+            return_as_dict=True,
+        )
+
+        # get a ground grid to path on, this already contains enemy influence
+        grid: np.ndarray = self.mediator.get_ground_grid
+        
+
+        # make a single call to self.attack_target property
+        # otherwise it keep calculating for every unit
+        target: Point2 = self.attack_target
+
+        # use `ares-sc2` combat maneuver system
+        # https://aressc2.github.io/ares-sc2/api_reference/behaviors/combat_behaviors.html
+        for unit in main_attack_force:
+            """
+            Set up a new CombatManeuver, idea here is to orchestrate your micro
+            by stacking behaviors in order of priority. If a behavior executes
+            then all other behaviors will be ignored for this step.
+            """
+
+            attacking_maneuver: CombatManeuver = CombatManeuver()
+            # we already calculated close enemies, use unit tag to retrieve them
+            all_close: Units = near_enemy[unit.tag].filter(
+                lambda u: not u.is_memory and u.type_id not in COMMON_UNIT_IGNORE_TYPES
+            )
+            only_enemy_units: Units = all_close.filter(
+                lambda u: u.type_id not in ALL_STRUCTURES
+            )
+
+            # enemy around, engagement control
+            if all_close:
+
+                
+                # ares's cython version of `cy_in_attack_range` is approximately 4
+                # times speedup vs burnysc2's `all_close.in_attack_range_of`
+
+                # idea here is to attack anything in range if weapon is ready
+                # check for enemy units first
+                if in_attack_range := cy_in_attack_range(unit, only_enemy_units):
+                    # `ShootTargetInRange` will check weapon is ready
+                    # otherwise it will not execute
+                    attacking_maneuver.add(
+                        UseAbility(AbilityId.EFFECT_CORROSIVEBILE, unit=unit, target=target)
+                    )                    
+
+
+
+                    attacking_maneuver.add(
+                        ShootTargetInRange(unit=unit, targets=in_attack_range)
+                    )
+                enemy_target: Unit = cy_pick_enemy_target(all_close)
+
+                attacking_maneuver.add(
+                    StutterUnitBack(unit=unit, target=enemy_target, grid=grid)
+                )
+                
+
+
+                #attacking_maneuver.add(KeepUnitSafe(unit=unit, grid=grid))
+
+            # no enemy around, path to the attack target
+            else:
+                attacking_maneuver.add(AMove(unit=unit, target=target))
+
+            # DON'T FORGET TO REGISTER OUR COMBAT MANEUVER!!
+            self.register_behavior(attacking_maneuver)
+
+
+
+#_______________________________________________________________________________________________________________________
+#          ON UNIT TOOK DAMAGE
+#_______________________________________________________________________________________________________________________
 
 
     
