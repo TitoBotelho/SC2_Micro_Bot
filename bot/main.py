@@ -13,7 +13,7 @@ from ares.behaviors.combat.individual import (
     StutterUnitForward,
     UseAbility,
 )
-from ares.behaviors.combat.individual import *
+
 
 from sc2.ids.ability_id import AbilityId
 from sc2.ids.unit_typeid import UnitTypeId
@@ -258,7 +258,7 @@ class MyBot(AresBot):
             #print("Creep Queen Policy: ", self.creep_queen_policy)
             #print("RallyPointSet: ", self.rally_point_set)
             #print("Enemy Structures: ", self.enemy_structures)
-            #print("Enemy Units: ", self.enemy_units)
+            print("Enemy Units: ", self.enemy_units)
             #print("Unit Roles: ", self.mediator.get_unit_role_dict)
             #print("zergling_squad: ", self.zergling_squad)
             print("is roach attacking: ", self.is_roach_attacking)
@@ -430,6 +430,16 @@ class MyBot(AresBot):
 
 
     def ravager_army_attack(self, main_attack_force: Units) -> None:
+
+
+        #chose the target of corrosive bile
+
+        bile_target: Point2 = self.attack_target
+        for unit in self.enemy_units:
+            if unit.name == 'SiegeTank':
+                bile_target = unit.position
+                break
+
         
         query_type: UnitTreeQueryType = (
             UnitTreeQueryType.EnemyGround
@@ -472,17 +482,23 @@ class MyBot(AresBot):
             # enemy around, engagement control
             if all_close:
 
-                
-                # ares's cython version of `cy_in_attack_range` is approximately 4
-                # times speedup vs burnysc2's `all_close.in_attack_range_of`
 
-                # idea here is to attack anything in range if weapon is ready
-                # check for enemy units first
+                
+
+                                     
+
+
+
                 if in_attack_range := cy_in_attack_range(unit, only_enemy_units):
                     # `ShootTargetInRange` will check weapon is ready
                     # otherwise it will not execute
+
+
+
+
+
                     attacking_maneuver.add(
-                        UseAbility(AbilityId.EFFECT_CORROSIVEBILE, unit=unit, target=target)
+                        UseAbility(AbilityId.EFFECT_CORROSIVEBILE, unit=unit, target=bile_target)
                     )                    
 
 
